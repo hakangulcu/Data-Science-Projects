@@ -1,3 +1,0 @@
-Generated Hyperplane dataset with 20,000 instance using Hyperplane Generator.
-Data Stream Classification with Three Separate Online Single Classifiers: HT, KNN, NB.
-Data Stream Classification with Two Online Ensemble Classifiers: MV, WMV.
