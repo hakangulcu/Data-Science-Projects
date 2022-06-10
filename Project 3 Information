@@ -1,2 +1,0 @@
-Implementing an artificial neural network (ANN) regressor and learn its weights implementing the backpropagation algorithm.
-This implementation supports an ANN for linear regression (no hidden layer) and an ANN with a single hidden layer.
