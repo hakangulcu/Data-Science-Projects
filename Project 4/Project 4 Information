@@ -1,0 +1,4 @@
+In first step, we would like to infer whether samples of sensor data form segregated clusters in the space spanned by the sensor features.
+Since the number of features are relatively large to visualize, first principal components analysis (PCA) performed.
+
+In second step, we will be testing two separate models for this purpose: a support-vectormachine (SVM) classifier and a multi-layer perceptron (MLP) classifier
