@@ -1,0 +1,436 @@
+---
+title: <center> <h3> Spring 2022 </h3> <h2> GE 461 Data Science </h2> <h3> taught by Savaş Dayanık </h3>  <h2> Data Analysis Project  </h2>  <h3> done by </h3> <h4> <span style="color:blue">* Caner Canlıer 21702121* </span> </h4>  <h4> <span style="color:blue">* Turgut Alp Edis 21702587 </span> </h4>  <h4> <span style="color:blue">* Hakan Gülcü 21702275* </span> </h4></center>
+pagetitle: Data Analysis Project 
+date: <center>  8 April 2021</center>
+params:
+ resume_on_error: no
+output: 
+  bookdown::html_document2:
+    theme: readable
+    toc: true
+---
+
+```{r setup, include=FALSE}
+library(magrittr)
+library(tidyverse)
+library(car)
+library(knitr)
+library(pander)
+opts_chunk$set(echo = TRUE)
+options(knitr.kable.NA =".") 
+kable_format <- if (is_html_output()) "html" else "latex"
+options(scipen = 999)
+```
+
+# Data Downloading
+
+```{r}
+library(RSQLite)  
+con <- dbConnect(SQLite(), "C:/Users/ccane/Desktop/ge461/data/dodgers.sqlite") # read Modern Data Science with R for different ways to connect a database.
+
+events <- tbl(con, "events") %>% 
+  collect() %>% 
+  mutate(day_of_week = factor(day_of_week, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")),
+         month = factor(month, levels = c("APR","MAY","JUN","JUL","AUG","SEP","OCT")),
+         temp = round((temp - 32)*5/9),
+         bobblehead = factor(bobblehead),
+         opponent=factor(opponent),
+         skies = factor(skies),
+         day_night = factor(day_night),
+         cap = factor(cap),
+         shirt = factor(shirt),
+         fireworks= factor(fireworks))
+```
+
+Lets quickly check first 6 rows of our data.
+
+```{r}
+events %>% head()
+```
+
+
+# Data Exploration
+
+Lets start with a summary table
+
+```{r}
+summary(events)
+```
+
+According to this summary,we have 7 months in our data set. Also we have 81 row in our data. Giving cap or shirt is unusal according to this data set. So we can check when they are given:
+
+```{r}
+events %>% 
+  count(month, shirt) %>% 
+  spread(key = month, value = n) %>% 
+  pander(caption = "Number of games played on each day of week disaggrated according whether shirt was given away or not")
+```
+
+```{r}
+events %>% 
+  count(month, cap) %>% 
+  spread(key = month, value = n) %>% 
+  pander(caption = "Number of games played on each day of week disaggrated according whether cap was given away or not")
+```
+
+According to these tables,  neither shirt nor cap has been given in may and oct.
+
+```{r}
+events %>% ggplot(aes(month, attend)) + geom_boxplot( fill="tomato4") +  stat_summary(fun = median,
+               geom = "smooth",
+               aes(group = 1),
+               col = "red") + labs(title="Relationship Between Month and Attendance")+
+geom_hline(yintercept = mean(events$attend),col="cyan")
+```
+
+It seems like attendance is high in June. After June, it gradually decreases.Blue line indicates the mean of attendance. 
+
+```{r}
+events %>% ggplot(aes(day_night, attend)) + geom_boxplot(fill="tomato3")+facet_wrap(~skies)
+```
+
+When it is clear, it seems like it doesn't matter day or night. Also we have unsufficient data in cloudy days.
+
+```{r}
+# DENSITY GRAPHH
+g <- events %>%  ggplot(aes(attend))
+g + geom_density(aes(fill=factor(day_of_week)), alpha=0.8) + 
+    labs(title="Density plot", 
+         subtitle="Attendance Grouped by Number of Days",
+         caption="Source: evets",
+         x="Attendance",
+         fill="Days of the Week")
+```
+
+According to this density graph, most of our data is collected from in Monday.
+
+```{r}
+events$weeks <- ifelse(events$day_of_week=="Saturday","Weekend",ifelse(events$day_of_week=="Sunday","Weekend","Weekday"))
+events %>% ggplot(aes(attend,weeks))+geom_boxplot()+coord_flip()
+```
+It seems like attendance is higher in weekends.
+Let's see if our hypothesis (attendance and weekdays are independent) is true by applying Chi-square test.
+
+```{r}
+tbl <- xtabs(~ attend+weeks , events)
+tbl %>% chisq.test(simulate.p.value = TRUE, B = 10000) %>% pander(caption = "Pearson's Chi-squared test with simulated p-value
+	 (based on 10000 replicates)")
+```
+
+We have a large p value so we can conclude that attendance changes if it is weekend or weekday.
+
+***Hypothesis:*** At nights, the weather will be cold, so attendance will be drop.
+
+```{r}
+scatterplot(attend ~ temp| day_night, data=events, regLine=FALSE)
+```
+Our assumption is true that nights are colder and our attendance is lower than night. However when the temperature is higher than the 30 degree, night games are more popular than morning games.
+
+***Hypothesis:*** In hotter months, people tend to attend more night games.
+
+```{r}
+ggplot(events,aes(day_night,attend)) + geom_boxplot(aes(fill=day_night)) + facet_grid(~month)
+```
+
+According to this graph it seems like in summer months, night games are more popular.
+
+***Hypothesis:*** Opponents have an impact on attendance 
+
+```{r}
+events %>%
+  mutate(opponent=fct_reorder(opponent, attend, 
+                        na.rm=TRUE, 
+                        .desc=TRUE)) %>% ggplot(aes(opponent, attend)) + 
+  geom_boxplot(fill="tomato3")+
+  coord_flip()
+```
+
+It seems like while Angels is the opponent, attendance is the top level, Braves is the opponent, attendance is the low level.
+
+***Hypothesis:*** Is there a relationship between day and attendance ?
+
+```{r}
+events %>% ggplot(aes(day, attend)) + geom_point( fill="tomato4") +geom_smooth()
+```
+
+Since it is kinda straight line, seems like no.
+
+***Hypothesis:*** There is a relationship between temp and attendance ?
+
+```{r}
+events %>% ggplot(aes(temp, attend)) + geom_point( color="tomato") +geom_smooth()
+```
+
+After some degree, attendance starts to go down. But at what degree?
+
+```{r}
+events %>% group_by(temp) %>% summarize_if(is.numeric, max)
+```
+
+It seems like 24 degree is the maximum point. Lets make further exploration that enable us to use temp variable decently.
+
+```{r}
+tempp<- ifelse(events$temp<=24,events$temp,24-events$temp)
+model1<-lm(attend~temp,events)
+model2 <- lm(attend~tempp,events)
+model3 <- lm(attend~temp+I(temp^2)+I(temp^3)+I(temp^4),events)
+model4<- lm(attend~poly(temp,2),events)
+
+BIC(model1,model2,model3,model4)
+```
+
+When we compare those 4 different model by using BIC and conclude that model 4 provides the most suitable form of temp for our further model. The graph of model 4 seems like as the below. Here important part is following the real temp line without over-fitting.
+
+```{r}
+small<- lm(attend~1,events)
+anova(small,model4)
+```
+
+This Anova test shows there is a relationship between quadratic version of temp and attendance.
+
+```{r}
+events %>% ggplot(aes(temp,attend)) + geom_point(color="tomato") + geom_smooth() + geom_smooth(method = "lm", formula = y ~ poly(x,2), col="red",se=FALSE) 
+```
+
+Now lets check 
+```{r}
+xtabs(attend~day_of_week+day_night,events) %>% summary()
+```
+
+When we count the attendance on all games, p-value for the independence test becomes be zero. Therefore, we reject the null hypothesis (= independence of day_night and day of week).Considering sum of attendance, we conclude the predictors day_of_week and day_night are NOT independent. We should consider adding a interaction term  to regression model.
+
+Finally, Lets check all the correlations.
+```{r}
+panel.hist <- function(x, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(usr[1:2], 0, 1.5) )
+    h <- hist(x, plot = FALSE)
+    breaks <- h$breaks; nB <- length(breaks)
+    y <- h$counts; y <- y/max(y)
+    rect(breaks[-nB], 0, breaks[-1], y, col = "cyan", ...)
+}
+
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex.cor * r)
+}
+
+events[1:6] %>% 
+  rev() %>% 
+  pairs(diag.panel = panel.hist, 
+        upper.panel = function(...) panel.smooth(..., lwd=2, col="gray"), 
+        lower.panel = panel.cor)
+
+events[c(3,7:12)] %>% 
+  rev() %>% 
+  pairs(diag.panel = panel.hist, 
+        upper.panel = function(...) panel.smooth(..., lwd=2, col="gray"), 
+        lower.panel = panel.cor)
+
+```
+
+According to correlation results, attendance seems only positive correlated with bobblehead.Attendance seems like only positive correlated wiht bobblehead. Also month is positive correlated with temperature which make sense since April to June, temp will increase gradually. However, correlation between two parameter might cause a problem such as multi-collinearity.
+
+Therefore lets check if there is a multi-collinearity. If vif is greater that 5 or 10 for a particular variable, we suspect that that variable might be explained by other variables and this is what we call multi-collinearity. Since we cannot apply vif directly to categorical variables we used generalized vif value to calculate GVIF^(1/(2*Df)) and come up with a solution.
+
+```{r}
+library(car)
+mo<-lm(attend~.-weeks,events)
+car::vif(mo)
+```
+
+Since non of the vif value is bigger than 5, we don't have to eliminate any of them. So, we can say that there is no multicollinearity.
+
+# Building Model
+
+```{r}
+model<-lm(attend~.-weeks,events)
+model %>% summary()
+```
+From our first insight we can interpret that since p-value (p < 0.05) is small, our model is significant. Also adjusted  `R^2` implies that model explains approximately 48% of variability in expected life which is not good.We are checking adjusted `R^2` since multiple r-square might give us wrong results when the variable number increases in the model. We need to improve more this model. Temp doesn't seem important but as we discovered earlier, we need to quadratic version of temp.
+
+Coeffients indicates that how many attendance will be gain if we implement those variable. For instance if we give bobblehead, possible attendance that we will get is 9395. 
+
+```{r}
+model2<- model %>% update(.~.-temp+poly(temp,2))
+model2 %>% summary()
+```
+
+Now it seems like temp is statistically significant. Also our `adj-R^2` increased from 0.48 to 0.50.
+
+Lets check whether this model satisfy the normality assumptions.
+
+```{r}
+plot(model2)
+```
+
+Residual vs Fitted -> Firstly, for the linearity of the model, the Residuals vs. Fitted plot will be checked. It is an indication of correlation between parameters. It doesn't seem a straight line, so it needs an improvement.
+
+Normal Q-Q plot -> the smoother line again does not follow the dashed line, so it does not satisfy the normality assumption and we expect standardized values to be between -1 and 1 but there are points way beyond 1 and -1.
+
+Scale-Location plot -> Variance is not stable and homoscedasticity assumption is not satisfied.
+
+Residuals vs Leverage -> It seems like there is no influential points.
+
+Conclusion, there is still room for improvement.
+
+
+Lets add all the interactions and check if our model accuracy increase.
+
+```{r}
+model3<-model2 %>% update(.~.^2)
+AIC(model3)
+```
+
+It seems like we over-fitted. Lets check the most important interactions.
+
+```{r}
+model4<- model2 %>% update(.~.+month:poly(temp,2)+opponent:bobblehead+skies:day_night+
+                          day_night:day_of_week+ skies:day_of_week+
+                            fireworks:day_night+fireworks:shirt)%>% step(trace=FALSE,direction="both") 
+
+model5<-model2 %>% update(.~.+month:poly(temp,2)+opponent:bobblehead+skies:day_night+
+                          day_night:day_of_week+ skies:day_of_week+
+                            fireworks:day_night+fireworks:shirt+day_night:poly(temp, 2)
+                          )%>% step(trace=FALSE,direction="both") 
+
+model5 %>% summary()
+```
+
+We obtain our Adjusted R-squared 69% which is better than our first model. Lets compare our first model and more developed model.
+
+```{r}
+AIC(model2,model4,model5)
+BIC(model2,model4,model5)
+```
+AIC and BIC measures the goodness of fit however it seems like they are not agree on the same model. While AIC choose model 5 (most complicated model), BIC choose model 2(least complicated model among other models that we created).
+
+```{r}
+100*sigma(model2)/median(events$attend)
+100*sigma(model4)/median(events$attend)
+100*sigma(model5)/median(events$attend)
+```
+
+Also our error percentage has been declined from %14 (model2) to %11 (model5). However since we have very limited data, we may over-fit things so it would be safer if we do cross-validation.
+
+
+```{r}
+nfold <-  4
+set.seed(1)
+id_fold <- rep(1:4, len = nrow(events)) %>% sample()
+
+rmse_model2 <- rep(NA, nfold)
+rmse_model4 <- rep(NA, nfold)
+rmse_model5 <- rep(NA, nfold)
+for (i in seq(nfold)){
+  test <- events[id_fold == i,]
+  train <- events[id_fold != i,]
+  
+  lmod_2 <- update(model2, data = train)
+  suppressWarnings(pred_test_2 <- predict(lmod_2, newdata= test))
+  rmse_model2[i] <- sqrt(mean((test$attend - pred_test_2)^2))
+  
+  lmod_4 <- update(model4, data = train)
+  suppressWarnings(pred_test_4 <- predict(lmod_4, newdata= test))
+  rmse_model4[i] <- sqrt(mean((test$attend - pred_test_4)^2))
+  
+  lmod_5 <- update(model5, data = train)
+  suppressWarnings(pred_test_5 <- predict(lmod_5, newdata= test))
+  rmse_model5[i] <- sqrt(mean((test$attend - pred_test_5)^2))
+}
+
+rmse_model2 %>% mean()
+rmse_model4 %>% mean()
+rmse_model5 %>% mean()
+```
+
+As it can be seen from these cv errors, our model doesn't perform well while predicting the unseen data. While mean rmse of model 2 is `rmse_model2 %>% mean()`, this result has increased 10 times. Even though our `adj-R^2` is improved from 0.50 to 0.69, performance of predicting future decreases. The reason of this might be we have very small data set. Since 81 data is not enough to learn, we are over-fitting by increasing df. Therefore it would be reasonable to choose model 2(simpler model) rather than model 5(more complicated model) though its `adj-R^2` is lower.
+
+Maybe we can think simpler and come up with a simple model. Lets directly apply stepwise selection to model2 and come up with a simpler solution.
+
+```{r}
+simple <- model2 %>% step(direction="backward",trace=FALSE)
+summary(simple)
+```
+
+This simple model has better `adj-R^2` than model2. Let's compare AIC and BIC.
+```{r}
+AIC(model2,simple)
+BIC(model2,simple)
+```
+
+Both method indicates that simple model is better. To be sure lets do cross-validation again.
+
+```{r}
+nfold <-  4
+set.seed(1)
+id_fold <- rep(1:4, len = nrow(events)) %>% sample()
+
+rmse_model2 <- rep(NA, nfold)
+rmse_simple <- rep(NA, nfold)
+
+for (i in seq(nfold)){
+  test <- events[id_fold == i,]
+  train <- events[id_fold != i,]
+  
+  lmod_2 <- update(model2, data = train)
+  suppressWarnings(pred_test_2 <- predict(lmod_2, newdata= test))
+  rmse_model2[i] <- sqrt(mean((test$attend - pred_test_2)^2))
+  
+  lmod_4 <- update(simple, data = train)
+  suppressWarnings(pred_test_4 <- predict(lmod_4, newdata= test))
+  rmse_simple[i] <- sqrt(mean((test$attend - pred_test_4)^2))
+  
+}
+
+rmse_model2 %>% mean()
+rmse_simple %>% mean()
+```
+
+Also according to cross validation results, simple model works better in unseen data. All method indicates that simple model is the best among all of the models. 
+```{r}
+summary(simple)
+```
+
+According to our final model, while month, day of week, cap, fireworks, bobblehead and temp are significant predictors, others are not important. 
+
+# Analysis
+
+Lets check if our model suggest that there is relation between attend and at least one of the other variables?
+
+```{r}
+anova(update(simple, . ~ 1), simple)
+```
+
+We test model with intercept only against the working model. F test has practically zero p-value. We reject the null model. There is strong evidence in the data to support that at least one of the predictors is related to response.
+
+Also we can check the most significant significant main effects in our model
+
+```{r}
+summary(simple) %>% 
+  coef() %>% 
+  as_tibble(rownames = "Predictor") %>% 
+  arrange(`Pr(>|t|)`) %>% 
+  pander(caption = "Effects")
+```
+
+It seems like the most significant main effect is bobblehead.
+
+Let's do some quick analysis.
+For instance, if we want to predict the attendance in June friday while temp is avearge and no cap or bobblehead is given.
+
+    ```{r}
+newdata = data.frame(month = "JUN",day_of_week="Friday",cap="NO",bobblehead="NO",fireworks="NO",temp=mean(events$temp))
+predict(simple, newdata = newdata, interval = "prediction", level = 0.90)
+
+```
+
+According to our prediction, with 90% confidence level, we can say that we will get 30373 attendance.
+
